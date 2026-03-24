@@ -59,6 +59,7 @@ impl Table {
             opp_midfield,
             opp_strikers,
             ball,
+            last_update: 0,
         }
     }
 

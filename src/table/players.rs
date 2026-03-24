@@ -129,7 +129,7 @@ impl FriendlyPlayers {
     pub fn move_to(&mut self, position: f64, redis_con: &mut redis::Connection) {
         // TODO: send command to table
         assert!((0.0..=1.0).contains(&position));
-        redis_con.lpush("task_queue", SlideCommand::new(self.kind, position).as_json());
+        redis_con.lpush("task_queue", SlideCommand::new(self.kind, position).as_json()).unwrap();
         self.target_position = position;
     }
 
