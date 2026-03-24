@@ -129,11 +129,10 @@ impl Model {
         }
     }
 
-    pub fn do_action(&mut self) {
+    pub fn do_action(&mut self, redis_con: &mut redis::Connection) {
         if !self.table.ball.on_table() {
             return;
         }
-        let mut redis_con = self.redis_client.get_connection().unwrap();
 
         match self.action {
             Action::Block { .. } => {
@@ -165,17 +164,17 @@ impl Model {
 
                 let ball_to_players_distance = controlled_players.line_position() - ball.position.x;
                 if !(ball_to_players_distance.abs() < 3.0 && ball.velocity.length() < 2.0) {
-                    controlled_players.set_angle(20.0f64.copysign(ball.velocity.x), 1.0, &mut redis_con);
+                    controlled_players.set_angle(20.0f64.copysign(ball.velocity.x), 1.0, redis_con);
                 }
 
                 if ball.velocity.length() > 2.0 {
-                    controlled_players.move_to_block(ball, &mut redis_con);
+                    controlled_players.move_to_block(ball, redis_con);
                 } else {
-                    controlled_players.move_to_align(ball.position.y, &mut redis_con);
+                    controlled_players.move_to_align(ball.position.y, redis_con);
                 }
 
                 if (2.0..=4.0).contains(&ball_to_players_distance) && ball.velocity.x > 0.5 {
-                    controlled_players.set_angle(60.0, 1.0, &mut redis_con);
+                    controlled_players.set_angle(60.0, 1.0, redis_con);
                     self.action = if controlled_players.kind() == PlayerKind::Striker {
                         Action::Block {
                             moved_in_range: None,
@@ -186,9 +185,9 @@ impl Model {
                 }
 
                 if controlled_players.kind() != PlayerKind::GoalKeeper {
-                    self.table.gk.move_to(0.5, &mut redis_con);
+                    self.table.gk.move_to(0.5, redis_con);
                     if self.table.gk.target_angle().abs() < 30.0 {
-                        self.table.gk.set_angle(0.0, 1.0, &mut redis_con);
+                        self.table.gk.set_angle(0.0, 1.0, redis_con);
                     }
                 }
             }
@@ -199,7 +198,7 @@ impl Model {
                     .friendly_players_in_range(ball.position.x..)
                     .next()
                     .unwrap();
-                controlled_players.set_angle(45.0, 1.0, &mut redis_con);
+                controlled_players.set_angle(45.0, 1.0, redis_con);
             }
             Action::Pass => {
                 let ball = self.table.ball;
@@ -217,17 +216,17 @@ impl Model {
                     return;
                 }
 
-                let remaining_angle = friendly_players[min_pos].set_angle_avoiding_ball(-50.0, ball, &mut redis_con);
-                friendly_players[min_pos + 1].set_angle(20.0, 1.0, &mut redis_con);
-                let d2 = friendly_players[min_pos + 1].move_to_align(ball.position.y, &mut redis_con);
+                let remaining_angle = friendly_players[min_pos].set_angle_avoiding_ball(-50.0, ball, redis_con);
+                friendly_players[min_pos + 1].set_angle(20.0, 1.0, redis_con);
+                let d2 = friendly_players[min_pos + 1].move_to_align(ball.position.y, redis_con);
                 if remaining_angle > 5.0 {
                     return;
                 }
 
-                let d1 = friendly_players[min_pos].move_to_align(ball.position.y, &mut redis_con);
+                let d1 = friendly_players[min_pos].move_to_align(ball.position.y, redis_con);
 
                 if d1.abs() < 0.5 && d2.abs() < 1.0 {
-                    friendly_players[min_pos].set_angle(45.0, 0.5, &mut redis_con);
+                    friendly_players[min_pos].set_angle(45.0, 0.5, redis_con);
                     self.action = Action::Block { moved_in_range: None };
                 }
             }
@@ -235,15 +234,15 @@ impl Model {
             Action::Shoot => {
                 let ball = self.table.ball;
                 let controlled_players = self.table.friendly_players_closest_to_ball();
-                let remaining_angle = controlled_players.set_angle_avoiding_ball(-50.0, ball, &mut redis_con);
+                let remaining_angle = controlled_players.set_angle_avoiding_ball(-50.0, ball, redis_con);
                 if remaining_angle > 5.0 {
                     return;
                 }
-                let remaining_distance = controlled_players.move_to_kick_goal(ball, &mut redis_con);
+                let remaining_distance = controlled_players.move_to_kick_goal(ball, redis_con);
                 if remaining_distance.abs() > 0.5 {
                     return;
                 }
-                controlled_players.set_angle(45.0, 1.0, &mut redis_con);
+                controlled_players.set_angle(45.0, 1.0, redis_con);
                 self.action = if controlled_players.kind() == PlayerKind::Striker {
                     Action::Block {
                         moved_in_range: None,
@@ -259,10 +258,12 @@ impl Model {
         loop {
             let start = Instant::now();
 
+            let mut redis_con = self.redis_client.get_connection().unwrap();
+
             // TODO: get up to date information from server
-            self.table.update();
+            self.table.update(&mut redis_con);
             self.update_action();
-            self.do_action();
+            self.do_action(&mut redis_con);
 
             thread::sleep(Duration::from_millis(50) - start.elapsed())
         }

@@ -96,6 +96,11 @@ impl FriendlyPlayers {
         }
     }
 
+    pub fn update(&mut self, position: f64, angle: f64) {
+        self.position = position;
+        self.angle = angle;
+    }
+
     pub const fn target_angle(&self) -> f64 {
         self.target_angle
     }
@@ -251,6 +256,11 @@ impl OpposingPlayers {
             position: 0.0,
             angle: 0.0,
         }
+    }
+
+    pub fn update(&mut self, position: f64, angle: f64) {
+        self.position = position;
+        self.angle = angle;
     }
 
     pub fn set_position(&mut self, position: f64) {

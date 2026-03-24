@@ -1,7 +1,8 @@
-use std::ops::RangeBounds;
+use std::{ops::RangeBounds, thread, time::Duration};
 
 use glam::{DMat2, DVec2};
 use ordered_float::OrderedFloat;
+use redis::TypedCommands;
 
 use crate::table::{
     ball::Ball,
@@ -25,53 +26,176 @@ const PLAYER_FOOT_WIDTH: f64 = 1.4;
 
 pub struct Table {
     pub gk: FriendlyPlayers,
-    pub defense: FriendlyPlayers,
+    pub defence: FriendlyPlayers,
     pub midfield: FriendlyPlayers,
     pub strikers: FriendlyPlayers,
     pub opp_gk: OpposingPlayers,
-    pub opp_defense: OpposingPlayers,
+    pub opp_defence: OpposingPlayers,
     pub opp_midfield: OpposingPlayers,
     pub opp_strikers: OpposingPlayers,
     pub ball: Ball,
+    last_update: u128,
 }
 
 impl Table {
     pub fn new() -> Self {
         let gk = FriendlyPlayers::new(PlayerKind::GoalKeeper, 7.25);
-        let defense = FriendlyPlayers::new(PlayerKind::Defender, 7.25 + 9.5);
+        let defence = FriendlyPlayers::new(PlayerKind::Defender, 7.25 + 9.5);
         let opp_strikers = OpposingPlayers::new(PlayerKind::Striker, 7.25 + 2.0 * 9.5);
         let midfield = FriendlyPlayers::new(PlayerKind::MidFielder, 7.25 + 3.0 * 9.5);
         let opp_midfield = OpposingPlayers::new(PlayerKind::MidFielder, 7.25 + 4.0 * 9.5);
         let strikers = FriendlyPlayers::new(PlayerKind::Striker, 7.25 + 5.0 * 9.5);
-        let opp_defense = OpposingPlayers::new(PlayerKind::Defender, 7.25 + 6.0 * 9.5);
+        let opp_defence = OpposingPlayers::new(PlayerKind::Defender, 7.25 + 6.0 * 9.5);
         let opp_gk = OpposingPlayers::new(PlayerKind::GoalKeeper, 7.25 + 7.0 * 9.5);
         let ball = Ball::new();
 
         Self {
             gk,
-            defense,
+            defence,
             midfield,
             strikers,
             opp_gk,
-            opp_defense,
+            opp_defence,
             opp_midfield,
             opp_strikers,
             ball,
         }
     }
 
-    pub fn update(&mut self) {
-        todo!("get data from the server and update")
+    pub fn update(&mut self, redis_con: &mut redis::Connection) {
+        let previous_last_update = loop {
+            let update_timestamp = redis_con.get("last_update").unwrap().unwrap().parse().unwrap();
+            if update_timestamp != self.last_update {
+                let previous_last_update = self.last_update;
+                self.last_update = update_timestamp;
+                break previous_last_update;
+            }
+            thread::sleep(Duration::from_millis(5));
+        };
+
+        self.gk.update(
+            redis_con
+                .get("gk_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con.get("gk_angle").unwrap().unwrap().parse().unwrap(),
+        );
+        self.defence.update(
+            redis_con
+                .get("defence_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("defence_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.midfield.update(
+            redis_con
+                .get("midfield_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("midfield_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.strikers.update(
+            redis_con
+                .get("striker_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("striker_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.opp_gk.update(
+            redis_con
+                .get("opp_gk_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("opp_gk_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.opp_defence.update(
+            redis_con
+                .get("opp_defence_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("opp_defence_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.opp_midfield.update(
+            redis_con
+                .get("opp_midfield_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("opp_midfield_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+        self.opp_strikers.update(
+            redis_con
+                .get("opp_striker_position")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+            redis_con
+                .get("opp_striker_angle")
+                .unwrap()
+                .unwrap()
+                .parse()
+                .unwrap(),
+        );
+
+        self.ball.update(
+            redis_con.get("ball_x").unwrap().unwrap().parse().unwrap(),
+            redis_con.get("ball_y").unwrap().unwrap().parse().unwrap(),
+            self.last_update - previous_last_update,
+        );
     }
 
     fn all_players<'a>(&'a self) -> [&'a dyn Players; 8] {
         [
             &self.gk,
-            &self.defense,
+            &self.defence,
             &self.midfield,
             &self.strikers,
             &self.opp_gk,
-            &self.opp_defense,
+            &self.opp_defence,
             &self.opp_midfield,
             &self.opp_strikers,
         ]
@@ -80,7 +204,7 @@ impl Table {
     pub fn friendly_players<'a>(&'a mut self) -> [&'a mut FriendlyPlayers; 4] {
         [
             &mut self.gk,
-            &mut self.defense,
+            &mut self.defence,
             &mut self.midfield,
             &mut self.strikers,
         ]
@@ -113,15 +237,14 @@ impl Table {
             .unwrap()
     }
 
-pub fn friendly_players_closest_to_ball<'a>(&'a mut self) -> &'a mut FriendlyPlayers {
+    pub fn friendly_players_closest_to_ball<'a>(&'a mut self) -> &'a mut FriendlyPlayers {
         let ball = self.ball;
         self.friendly_players()
             .into_iter()
-            .min_by_key(|players| {
-                OrderedFloat((players.line_position() - ball.position.x).abs())
-            })
+            .min_by_key(|players| OrderedFloat((players.line_position() - ball.position.x).abs()))
             .unwrap()
-    }}
+    }
+}
 
 struct Line {
     from: DVec2,
